@@ -16,20 +16,7 @@ class GazeController:
         self.camera_index = camera_index
         self.estimator = GazeEstimator()
 
-        # Load model or run calibration
-        # if model_file and os.path.isfile(model_file):
-        #     self.estimator.load_model(model_file)
-        #     print(f"[GazeController] Loaded gaze model from {model_file}")
-        # else:
         run_9_point_calibration(self.estimator, camera_index=self.camera_index)
-
-        # Save model
-        #estimator.save_model("gaze_model.pkl")
-
-        # Load model
-        #estimator = GazeEstimator()
-        #estimator.load_model("gaze_model.pkl")
-
 
         # Kalman smoothing
         self.kalman = make_kalman()
