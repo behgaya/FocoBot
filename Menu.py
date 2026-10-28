@@ -1,13 +1,14 @@
 import pygame
 import sys
-from gaze_controller import GazeController
-from alignment import face_alignment_screen
-from minigameSESE import SESEGame
-from minigameSUSE import SUSEGame
-from minigameFOAC import FOACGame
-from settings import SettingsScreen
-from settings import Button
-from settings import GameConfig
+import os
+from focobot.gaze_controller import GazeController
+from focobot.alignment import face_alignment_screen
+from focobot.minigames.minigameSESE import SESEGame
+from focobot.minigames.minigameSUSE import SUSEGame
+from focobot.minigames.minigameFOAC import FOACGame
+from focobot.settings import SettingsScreen
+from focobot.settings import Button
+from focobot.settings import GameConfig
 
 
 # ------------------------
@@ -149,7 +150,9 @@ class Menu:
                     game = run_func(
                         self.tela, self.largura, self.altura, self.clock, gaze=gaze,
                         snap_radius=self.config.foac_snap_radius,
-                        objetivos=self.config.foac_objetivos
+                        objetivos=self.config.foac_objetivos,
+                        max_blur=self.config.foac_max_blur,
+                        object_count=self.config.foac_object_count
                     )
                 elif run_func == SESEGame:
                     game = run_func(
@@ -159,7 +162,9 @@ class Menu:
                         self.clock,
                         gaze=gaze,
                         asteroid_count=self.config.sese_asteroid_count,
-                        rocket_speed=self.config.sese_speed
+                        rocket_speed=self.config.sese_speed,
+                        snap_radius=self.config.sese_snap_radius,
+                        required_look_time=self.config.sese_required_look_time
                     )
                 elif run_func == SUSEGame:
                     game = run_func(
@@ -169,9 +174,15 @@ class Menu:
                         self.clock,
                         gaze=gaze,
                         num_foods=self.config.suse_num_foods,
-                        fish_speed=self.config.suse_fish_speed
+                        fish_speed=self.config.suse_fish_speed,
+                        hit_radius=self.config.suse_hit_radius,
+                        food_spacing=self.config.suse_food_spacing,
+                        object_size=self.config.suse_object_size
                     )
-                game.run()
+                try:
+                    game.run()
+                finally:
+                    gaze.release()  # libera a webcam ao sair de qualquer minigame
 
             # Show the tutorial for this minigame
             tutorial = TutorialScreen(
@@ -189,7 +200,7 @@ class Menu:
     def _create_buttons(self):
         # Seus minigames
         game_data = [
-            ("", SESEGame, "Assets/MainMenu/SESE/button.png", "Assets/MainMenu/SESE/button_hover.png",
+            ("", SESEGame, "Assets/MainMenu/SESE/Button.png", "Assets/MainMenu/SESE/button_hover.png",
             "Assets/MainMenu/Background/bg_neutral.png", "Assets/MainMenu/Logo/logo_sese.png"),
             ("", SUSEGame, "Assets/MainMenu/SUSE/button.png", "Assets/MainMenu/SUSE/button_hover.png",
             "Assets/MainMenu/Background/bg_neutral.png", "Assets/MainMenu/Logo/logo_suse.png"),
@@ -297,7 +308,6 @@ class Menu:
             show_text=False  # hide text, only image
         )
 
-        self.buttons.append(settings_button)
         self.buttons.append(settings_button)
 
     def run(self):
@@ -425,6 +435,8 @@ class Menu:
 # MAIN
 # ------------------------
 if __name__ == "__main__":
+    # Assets/ and data/ paths are relative to the project root
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     pygame.init()
     info = pygame.display.Info()
     tela = pygame.display.set_mode((info.current_w, info.current_h), pygame.NOFRAME)

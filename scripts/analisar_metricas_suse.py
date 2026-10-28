@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # 1️⃣ Carregar o CSV
-df = pd.read_csv("metricas_suse.csv")
+df = pd.read_csv("data/metricas/metricas_suse.csv")
 
 # 2️⃣ Estatísticas básicas
 print("\n=== Estatísticas gerais ===")

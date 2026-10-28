@@ -80,21 +80,21 @@ class GameConfig:
         # FOAC (Missão dos Brinquedos)
         self.foac_snap_radius = 200
         self.foac_objetivos = 3
-        self.foac_fixation_time = 0.8
-        self.foac_max_blur = 8
-        self.foac_object_count = 6
+        self.foac_fixation_time = 0.8  # ainda não usado pelo jogo
+        self.foac_max_blur = 12
+        self.foac_object_count = 7     # limitado pelas imagens da pasta de objetos (Bear tem 7)
 
         # SESE (Resgate Espacial)
-        self.sese_snap_radius = 200
+        self.sese_snap_radius = 120
         self.sese_asteroid_count = 5
         self.sese_speed = 2
-        self.sese_required_look_time = 0.8
-        self.sese_object_radius = 40  # novo parâmetro para tamanho do objeto
+        self.sese_required_look_time = 0.2
+        self.sese_object_radius = 40  # ainda não usado pelo jogo
 
         # SUSE (Aventura Aquática)
         self.suse_num_foods = 5
         self.suse_fish_speed = 2
-        self.suse_hit_radius = 50
+        self.suse_hit_radius = 30      # margem somada ao raio do peixe
         self.suse_food_spacing = 150
         self.suse_object_size = 30
 
@@ -129,14 +129,14 @@ class SettingsScreen:
                 {"label": "Objetivos", "attr": "foac_objetivos", "values": [1, 2, 3, 4, 5], "type": "buttons"},
                 {"label": "Tempo de Fixação (s)", "attr": "foac_fixation_time", "values": [0.3, 0.6, 0.9, 1.2, 1.5], "type": "buttons"},
                 {"label": "Desfoque Máximo", "attr": "foac_max_blur", "values": list(range(0, 16)), "type": "buttons"},
-                {"label": "Quantidade de Objetos", "attr": "foac_object_count", "values": [4, 6, 8, 10], "type": "buttons"}
+                {"label": "Quantidade de Objetos", "attr": "foac_object_count", "values": [4, 5, 6, 7], "type": "buttons"}
             ],
 
             "Resgate Espacial": [
-                {"label": "Raio de Encaixe", "attr": "sese_snap_radius", "values": [50, 80, 110, 140, 170, 200, 230, 260, 300], "type": "buttons"},
+                {"label": "Raio de Encaixe", "attr": "sese_snap_radius", "values": [50, 80, 110, 120, 140, 170, 200, 230, 260, 300], "type": "buttons"},
                 {"label": "Asteroides", "attr": "sese_asteroid_count", "values": [3, 5, 7], "type": "buttons"},
                 {"label": "Velocidade do Foguete", "attr": "sese_speed", "values": [1, 2, 3, 4], "type": "buttons"},
-                {"label": "Tempo de Olhar (s)", "attr": "sese_required_look_time", "values": [0.3, 0.5, 0.8, 1.0, 1.2], "type": "buttons"},
+                {"label": "Tempo de Olhar (s)", "attr": "sese_required_look_time", "values": [0.2, 0.3, 0.5, 0.8, 1.0, 1.2], "type": "buttons"},
                 {"label": "Tamanho do Objeto", "attr": "sese_object_radius", "values": [20, 30, 40, 50, 60], "type": "buttons"}
             ],
 
@@ -163,20 +163,22 @@ class SettingsScreen:
         num_cols = len(self.columns)
         col_width = (self.largura - 2 * screen_padding) / num_cols
 
+        # o valor atual pode não estar na lista (ex.: padrão 0.8 com opções 0.6/0.9),
+        # então busca o próximo valor menor/maior em vez de usar values.index()
         def make_dec(attr, values):
             def dec():
                 current = getattr(self.config, attr)
-                idx = values.index(current)
-                if idx > 0:
-                    setattr(self.config, attr, values[idx - 1])
+                menores = [v for v in values if v < current]
+                if menores:
+                    setattr(self.config, attr, menores[-1])
             return dec
 
         def make_inc(attr, values):
             def inc():
                 current = getattr(self.config, attr)
-                idx = values.index(current)
-                if idx < len(values) - 1:
-                    setattr(self.config, attr, values[idx + 1])
+                maiores = [v for v in values if v > current]
+                if maiores:
+                    setattr(self.config, attr, maiores[0])
             return inc
 
         self.buttons.clear()

@@ -1,0 +1,24 @@
+# Known-good versions, taken from the working "py310" env.
+# Create:  conda env create -f environment.yml
+# Or       conda env create -f environment.yml --solver=libmamba
+# Use:     conda activate focobot
+name: focobot
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - pygame==2.6.1
+      - numpy==1.26.4
+      - pandas==2.3.3
+      - matplotlib==3.10.6
+      - pillow==11.3.0
+      # mediapipe >= 0.10.30 drops mp.solutions, which Eye.py and eyetrax rely on
+      - mediapipe==0.10.21
+      - protobuf==4.25.6
+      # eyetrax wants opencv-python, mediapipe wants opencv-contrib-python;
+      # both ship cv2, so keep them on the same version
+      - opencv-python==4.11.0.86
+      - opencv-contrib-python==4.11.0.86
+      - eyetrax==0.3.1

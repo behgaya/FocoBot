@@ -4,7 +4,7 @@ import math
 import cv2
 import numpy as np
 import time
-from metricas_tecnicas import MetricasTecnicas
+from focobot.metricas_tecnicas import MetricasTecnicas
 
 
 # ----------------------------
@@ -189,13 +189,15 @@ class Player:
 # SESEGame
 # ----------------------------
 class SESEGame:
-    def __init__(self, tela, largura, altura, clock, gaze=None, asteroid_count=5, rocket_speed=0.5):
+    def __init__(self, tela, largura, altura, clock, gaze=None, asteroid_count=5, rocket_speed=0.5,
+                 snap_radius=120, required_look_time=0.2):
         self.tela = tela
         self.largura = largura
         self.altura = altura
         self.clock = clock
         self.gaze = gaze
-        self.player = Player(gaze)
+        self.player = Player(gaze, snap_radius=snap_radius)
+        self.required_look_time = required_look_time  # olhar o asteroide por mais que isso = punição
         self.font = pygame.font.SysFont(None, 36)
         self.star = None
         self.star_timer = random.randint(300, 600)  # frames until next star
@@ -216,7 +218,9 @@ class SESEGame:
         self.asteroid_look_events = 0       
         self.asteroid_punishments = 0        
         self.asteroid_reaction_times = []    
-        self.asteroid_look_start = None     
+        self.asteroid_look_start = None
+        self.desvio_soma = 0  # soma das distâncias gaze-foguete (frames com gaze válido)
+        self.desvio_n = 0
 
         # imagem colorida
         self.rocket_img = pygame.image.load("Assets/SESE_Minigame/foguete.png").convert_alpha()
@@ -388,9 +392,9 @@ class SESEGame:
                 ("Número de fixações", f"{fixation_frequency}", (255, 255, 255)),
                 ("Taxa de Desvio Médio", f"{taxa_desvio_medio:.2f} px", (255, 255, 255)),
                 ("Duração média de fixações", f"{avg_fixation:.1f} s", (255, 255, 255)),
-                ("Taxa de Acerto/Fuga do Asteroide", f"{taxa_acerto_asteroide:.1f} %", (100, 255, 100)),  # verde destaque
+                ("Taxa de Fuga do Asteroide", f"{taxa_acerto_asteroide:.1f} %", (100, 255, 100)),  # verde destaque
                 ("Asteroides olhados", f"{self.asteroid_look_events}", (255, 255, 255)),
-                ("Tempo médio de reação ao Asteroide", f"{tempo_medio_reacao:.2f} s", (255, 255, 255)),
+                ("Tempo médio para desviar do Asteroide", f"{tempo_medio_reacao:.2f} s", (255, 255, 255)),
             ]
 
             # --- Desenha título centralizado ---
@@ -440,8 +444,8 @@ class SESEGame:
             self.tela.blit(rocket_heatmap_surf_small, (x_start + map_width + spacing, y_start))
 
             # --- Salvar heatmaps ---
-            cv2.imwrite("heatmap_astronaut.png", heatmap_img)
-            cv2.imwrite("heatmap_rocket.png", rocket_heatmap_img)
+            cv2.imwrite("data/heatmaps/heatmap_astronaut.png", heatmap_img)
+            cv2.imwrite("data/heatmaps/heatmap_rocket.png", rocket_heatmap_img)
 
             pygame.display.flip()
             self.clock.tick(30)
@@ -478,6 +482,7 @@ class SESEGame:
         self.asteroid_reaction_times = []
         self.asteroid_punishments = 0
         self.asteroid_look_events = 0
+        venceu = False
 
         while self.rodando:
             frame_inicio = time.time()
@@ -489,7 +494,7 @@ class SESEGame:
             # --- 1️⃣ CAPTURA DO GAZE ---
             inicio_captura = time.time()
             mx, my = self.player.get_input()  # pode ser gaze ou mouse
-            gaze_valido = (mx is not None and my is not None)
+            gaze_valido = mx >= 0 and my >= 0  # get_input devolve (-1, -1) quando perde o rastreio
             fim_captura = time.time()
 
             # --- 2️⃣ LÓGICA DO JOGO ---
@@ -501,6 +506,8 @@ class SESEGame:
                 self.gaze_points.append((mx, my))
                 dist_to_rocket = math.hypot(mx - self.rocket.x, my - self.rocket.y)
                 watching = dist_to_rocket < self.rocket.raio
+                self.desvio_soma += dist_to_rocket
+                self.desvio_n += 1
 
             # --- Fixações ---
             if watching and self.first_fixation_time is None:
@@ -524,8 +531,6 @@ class SESEGame:
             mx, my = self.player.apply_snapping(mx, my, snap_objects)
 
             # --- ASTEROIDES ---
-            REQUIRED_LOOK_TIME = 0.2  # player must look at the asteroid for 1 second
-
             now = time.time()
             current_looking = None
 
@@ -558,21 +563,21 @@ class SESEGame:
 
                     current_looking = ast
 
-                    # start the timer when player first looks
+                    # novo olhar para o asteroide: inicia o timer e conta o evento
                     if ast.look_start_time is None:
                         ast.look_start_time = now
-
-                    # check if the player has looked long enough
-                    if not ast.counted and now - ast.look_start_time >= REQUIRED_LOOK_TIME:
-                        reaction_time = now - ast.look_start_time
-                        self.asteroid_reaction_times.append(reaction_time)
                         self.asteroid_look_events += 1
+
+                    # olhou tempo demais: conta como punição (não fugiu a tempo)
+                    if not ast.counted and now - ast.look_start_time >= self.required_look_time:
                         self.asteroid_punishments += 1
                         ast.counted = True
                         ast.last_counted_time = now
 
                 else:
-                    # reset the look timer if player looks away
+                    # olhar terminou: tempo de reação = quanto tempo levou para desviar o olhar
+                    if ast.look_start_time is not None:
+                        self.asteroid_reaction_times.append(now - ast.look_start_time)
                     ast.look_start_time = None
 
 
@@ -633,19 +638,6 @@ class SESEGame:
             self.planet.draw(self.tela)
             self.asteroid_looked_dict[id(ast)] = False
 
-            # --- MÉTRICAS DE FIXAÇÃO ---
-            desvios = [
-                math.hypot(gx - fx, gy - fy)
-                for (gx, gy), (fx, fy) in zip(self.gaze_points, self.rocket_positions)
-                if gx >= 0 and gy >= 0
-            ]
-            taxa_desvio_medio = sum(desvios) / len(desvios) if desvios else 0
-
-            total_time = time.time() - self.start_time
-            avg_fixation = sum(self.focus_durations) / len(self.focus_durations) if self.focus_durations else 0
-            first_fixation = self.first_fixation_time if self.first_fixation_time else 0
-            total_fixation_time = sum(self.focus_durations)
-            fixation_frequency = self.focus_events
             # --- TEXTO INFERIOR ESQUERDO: ASTEROIDES OLHADOS ---
             font = pygame.font.SysFont(None, 28)  # ou usar sua fonte personalizada
             text = f"Asteroides olhados: {self.asteroid_look_events}"
@@ -656,41 +648,51 @@ class SESEGame:
 
             # --- CONDIÇÃO DE VITÓRIA ---
             if math.hypot(self.rocket.x - self.planet.x, self.rocket.y - self.planet.y) < self.rocket.raio:
-                if self.last_focus_start:
-                    duration = time.time() - self.last_focus_start
-                    self.focus_durations.append(duration)
-                    self.focus_time_total += duration
-                    self.last_focus_start = None
-
-                taxa_acerto_asteroide = (
-                    (self.asteroid_punishments / self.asteroid_look_events) * 100
-                    if self.asteroid_look_events > 0 else 0
-                )
-                tempo_medio_reacao = (
-                    sum(self.asteroid_reaction_times) / len(self.asteroid_reaction_times)
-                    if self.asteroid_reaction_times else 0
-                )
-
-                self.show_end_screen(
-                    total_time, first_fixation, total_fixation_time,
-                    fixation_frequency, avg_fixation, taxa_desvio_medio,
-                    taxa_acerto_asteroide, tempo_medio_reacao
-                )
-
-                print(f"Asteroides olhados: {self.asteroid_look_events}")
-                print(f"Tempo médio de reação: {tempo_medio_reacao:.2f} s")
-                print(f"Taxa de acerto/fuga do asteroide: {taxa_acerto_asteroide:.1f}%")
+                venceu = True
                 self.rodando = False
 
 
-            # --- 3️⃣ REGISTRO DE MÉTRICAS TÉCNICAS ---
+            pygame.display.flip()
+
+            # --- 3️⃣ REGISTRO DE MÉTRICAS TÉCNICAS (latência: leitura do gaze até a tela atualizada) ---
             fim_frame = time.time()
             self.metricas.registrar_gaze(gaze_valido, inicio_captura, fim_frame)
             self.metricas.registrar_fps(self.clock.get_fps())
 
-
-            pygame.display.flip()
             self.clock.tick(60)
+
+        # --- MÉTRICAS FINAIS (vitória ou saída antecipada) ---
+        if self.last_focus_start is not None:
+            duration = time.time() - self.last_focus_start
+            self.focus_durations.append(duration)
+            self.focus_time_total += duration
+            self.last_focus_start = None
+
+        total_time = time.time() - self.start_time
+        first_fixation = self.first_fixation_time if self.first_fixation_time else 0
+        total_fixation_time = sum(self.focus_durations)
+        fixation_frequency = self.focus_events
+        avg_fixation = total_fixation_time / len(self.focus_durations) if self.focus_durations else 0
+        taxa_desvio_medio = self.desvio_soma / self.desvio_n if self.desvio_n else 0
+        # taxa de fuga: % dos olhares para asteroides que desviaram antes da punição
+        taxa_acerto_asteroide = (
+            ((self.asteroid_look_events - self.asteroid_punishments) / self.asteroid_look_events) * 100
+            if self.asteroid_look_events > 0 else 0
+        )
+        tempo_medio_reacao = (
+            sum(self.asteroid_reaction_times) / len(self.asteroid_reaction_times)
+            if self.asteroid_reaction_times else 0
+        )
+
+        if venceu:
+            self.show_end_screen(
+                total_time, first_fixation, total_fixation_time,
+                fixation_frequency, avg_fixation, taxa_desvio_medio,
+                taxa_acerto_asteroide, tempo_medio_reacao
+            )
+            print(f"Asteroides olhados: {self.asteroid_look_events}")
+            print(f"Tempo médio de reação: {tempo_medio_reacao:.2f} s")
+            print(f"Taxa de fuga do asteroide: {taxa_acerto_asteroide:.1f}%")
 
         # --- SALVAR MÉTRICAS COMPLETAS ---
         dados_jogo = {
@@ -704,6 +706,6 @@ class SESEGame:
             "taxa_acerto_asteroide_%": round(taxa_acerto_asteroide, 1),
             "tempo_medio_reacao_s": round(tempo_medio_reacao, 2)
         }
-        self.metricas.salvar_csv(dados_jogo, "metricas_sese.csv")
+        self.metricas.salvar_csv(dados_jogo, "data/metricas/metricas_sese.csv")
 
         print(f"Fim do jogo SESE! Dados salvos.")

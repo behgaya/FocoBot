@@ -7,7 +7,7 @@ import math
 import numpy as np
 import csv
 import os
-from metricas_tecnicas import MetricasTecnicas
+from focobot.metricas_tecnicas import MetricasTecnicas
 
 # ------------------------
 # Bubble (visual feedback)
@@ -38,12 +38,12 @@ class Bubble:
 # Food Object
 # ------------------------
 class Food:
-    def __init__(self, x, y, img_path="Assets/SUSE/food.png"):
+    def __init__(self, x, y, img_path="Assets/SUSE/food.png", size=30):
         self.x = x
         self.y = y
         self.collected = False
         self.image = pygame.image.load(img_path).convert_alpha()
-        self.image = pygame.transform.smoothscale(self.image, (30, 30))
+        self.image = pygame.transform.smoothscale(self.image, (size, size))
         self.rect = self.image.get_rect(center=(x, y))
 
     def draw(self, tela):
@@ -102,8 +102,10 @@ class MovingObject:
         self.vel_y = math.sin(current_angle) * speed
         self.x += self.vel_x
         self.y += self.vel_y
-        self.x = max(self.raio, min(self.x, 1920 - self.raio))
-        self.y = max(self.raio, min(self.y, 1080 - self.raio))
+
+    def clamp(self, largura, altura):
+        self.x = max(self.raio, min(self.x, largura - self.raio))
+        self.y = max(self.raio, min(self.y, altura - self.raio))
 
 
 # ------------------------
@@ -153,7 +155,8 @@ class Player:
 # Main Game Class
 # ------------------------
 class SUSEGame:
-    def __init__(self, tela, largura, altura, clock, gaze=None, nivel="facil", num_foods=5, fish_speed=2):
+    def __init__(self, tela, largura, altura, clock, gaze=None, nivel="facil", num_foods=5, fish_speed=2,
+                 hit_radius=30, food_spacing=150, object_size=30):
         self.tela = tela
         self.largura = largura
         self.altura = altura
@@ -175,10 +178,10 @@ class SUSEGame:
         self.fish_positions = []  # lista de tuplas (x, y) do peixe
 
         # Background
-        bg_path = "Assets/SUSE/Background/background.png"
+        bg_path = "Assets/SUSE/background/background.png"
         self.background = pygame.image.load(bg_path).convert_alpha()
         self.background = pygame.transform.smoothscale(self.background, (largura, altura))
-        self.bg_video = cv2.VideoCapture("Assets/SUSE/Background/background2.mp4")
+        self.bg_video = cv2.VideoCapture("Assets/SUSE/background/background2.mp4")
 
         self.pontuacao = 0
         self.logo = pygame.image.load("Assets/MainMenu/Logo/logo_suse.png").convert_alpha()
@@ -194,11 +197,11 @@ class SUSEGame:
         self.target = MovingObject(imagem_escolhida, 250, largura // 2, altura // 2, self.velocidade)
         self.player = Player(gaze)
         self.bubbles = []
-        self.HIT_RADIUS = self.target.raio + 30
+        self.HIT_RADIUS = self.target.raio + hit_radius  # margem além do tamanho do peixe
 
         # Foods
         self.foods = []
-        min_distance = 150
+        min_distance = food_spacing
         attempts = 0
         for _ in range(num_foods):
             while True:
@@ -206,7 +209,7 @@ class SUSEGame:
                 fy = random.randint(100, altura - 100)
                 too_close = any(math.hypot(fx - f.x, fy - f.y) < min_distance for f in self.foods)
                 if not too_close or attempts > 100:
-                    self.foods.append(Food(fx, fy))
+                    self.foods.append(Food(fx, fy, size=object_size))
                     break
                 attempts += 1
 
@@ -339,8 +342,8 @@ class SUSEGame:
             self.tela.blit(fish_heatmap_surf_small, (x_start + map_width + spacing, y_start))
 
             # --- Salvar arquivos ---
-            cv2.imwrite("heatmap_gaze.png", heatmap_img)
-            cv2.imwrite("heatmap_fish.png", fish_heatmap_img)
+            cv2.imwrite("data/heatmaps/heatmap_gaze.png", heatmap_img)
+            cv2.imwrite("data/heatmaps/heatmap_fish.png", fish_heatmap_img)
 
             pygame.display.flip()
             self.clock.tick(30)
@@ -485,6 +488,7 @@ class SUSEGame:
                 self.target.move_toward(target_food.x, target_food.y)
             else:
                 self.target.move_random()
+            self.target.clamp(self.largura, self.altura)
 
             if target_food and watching:
                 fish_rect = pygame.Rect(
@@ -536,18 +540,18 @@ class SUSEGame:
             self.clock.tick(60)
 
         # --- Estatísticas finais ---
-        total_time = time.time() - self.start_time
-        avg_fixation = sum(self.focus_durations) / len(self.focus_durations) if self.focus_durations else 0
-        first_fixation = self.first_fixation_time if self.first_fixation_time else 0
-        total_fixation_time = sum(self.focus_durations)  # ou self.focus_time_total
-        fixation_frequency = self.focus_events
-
-
+        # fecha a fixação em andamento antes de calcular os totais
         if self.last_focus_start:
             duration = time.time() - self.last_focus_start
             self.focus_durations.append(duration)
             self.focus_time_total += duration
             self.last_focus_start = None
+
+        total_time = time.time() - self.start_time
+        avg_fixation = sum(self.focus_durations) / len(self.focus_durations) if self.focus_durations else 0
+        first_fixation = self.first_fixation_time if self.first_fixation_time else 0
+        total_fixation_time = sum(self.focus_durations)  # ou self.focus_time_total
+        fixation_frequency = self.focus_events
 
         # --- Tela final ---
         self.show_end_screen(
@@ -565,8 +569,6 @@ class SUSEGame:
             "comidas_coletadas": self.pontuacao,
             "total_comidas": self.num_foods
         }
-        self.metricas.salvar_csv(dados_jogo, "metricas_suse.csv")
+        self.metricas.salvar_csv(dados_jogo, "data/metricas/metricas_suse.csv")
 
-        if self.gaze:
-            self.gaze.release()
         print(f"Fim do jogo! Pontos: {self.pontuacao}/{self.num_foods}")

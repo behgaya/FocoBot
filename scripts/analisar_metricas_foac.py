@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # 1️⃣ Carregar os dados
-df = pd.read_csv("metricas_FOAC.csv")
+df = pd.read_csv("data/metricas/metricas_FOAC.csv")
 
 # 2️⃣ Estatísticas gerais
 print("\n=== Estatísticas gerais ===")

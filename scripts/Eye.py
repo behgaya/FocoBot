@@ -3,8 +3,8 @@ import mediapipe as mp
 import os
 
 # Paths
-input_dir = "calib_faces"
-output_dir = "calib_eyes"
+input_dir = "data/calibracao/calib_faces"
+output_dir = "data/calibracao/calib_eyes"
 os.makedirs(output_dir, exist_ok=True)
 
 # Initialize MediaPipe Face Mesh

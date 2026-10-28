@@ -1,7 +1,7 @@
 import pygame
 import random
 from PIL import Image, ImageFilter, ImageDraw
-from metricas_tecnicas import MetricasTecnicas
+from focobot.metricas_tecnicas import MetricasTecnicas
 import os
 import glob
 import math
@@ -10,17 +10,20 @@ import time
 
 
 class FOACGame:
-    def __init__(self, tela, largura=1280, altura=720, clock=None, gaze=None, snap_radius=250, objetivos=3):
+    def __init__(self, tela, largura=1280, altura=720, clock=None, gaze=None, snap_radius=250, objetivos=3,
+                 max_blur=12, object_count=7):
         self.tela = tela
         self.largura = largura
         self.altura = altura
         self.clock = clock or pygame.time.Clock()
         self.gaze = gaze
+        self.n_objetos = object_count  # brinquedos na tela por rodada
+        self.max_blur = max_blur
         self.gaze_points = []  # store all gaze points
         self.heatmap_alpha = 100
         self.blinks_totais = 0
         self.blinks_corretos = 0
-        self.tempo_ultima_fixacao_para_blink = [None] * 7  # para medir tempo de fixação até a piscada
+        self.tempo_ultima_fixacao_para_blink = [None] * self.n_objetos  # para medir tempo de fixação até a piscada
         self.metricas = MetricasTecnicas("FOACGame")
 
 
@@ -33,9 +36,9 @@ class FOACGame:
         self.JUMP_DURATION = 1.2
 
         # --- gaze tracking memory ---
-        self.gaze_start_times = [None] * 7
-        self.jumping_objects = [False] * 7
-        self.jump_start_times = [None] * 7
+        self.gaze_start_times = [None] * self.n_objetos
+        self.jumping_objects = [False] * self.n_objetos
+        self.jump_start_times = [None] * self.n_objetos
 
         # --- logos ---
         self.logo_default = self.load_logo("Assets/MainMenu/Logo/logo_waiting.png")
@@ -59,10 +62,10 @@ class FOACGame:
         self.tempo_fim = None
 
         # Para cada objeto: armazenar tempos de fixação
-        self.fixacoes = {i: [] for i in range(7)}  # [(inicio, fim), ...]
-        self.tempo_primeira_fixacao = {i: None for i in range(7)}
-        self.num_fixacoes = {i: 0 for i in range(7)}
-        self.duracao_total_fixacao = {i: 0.0 for i in range(7)}
+        self.fixacoes = {i: [] for i in range(self.n_objetos)}  # [(inicio, fim), ...]
+        self.tempo_primeira_fixacao = {i: None for i in range(self.n_objetos)}
+        self.num_fixacoes = {i: 0 for i in range(self.n_objetos)}
+        self.duracao_total_fixacao = {i: 0.0 for i in range(self.n_objetos)}
 
         # --- load toys ---
         self.carregar_objetos_pasta("Assets/FOAC_Minigame/Objects")
@@ -117,8 +120,8 @@ class FOACGame:
 
         pasta_escolhida = random.choice(pastas)
         imagens = glob.glob(os.path.join(pasta_escolhida, "*.png"))
-        if len(imagens) < 7:
-            raise ValueError(f"A pasta {pasta_escolhida} deve ter pelo menos 7 imagens")
+        if len(imagens) < self.n_objetos:
+            raise ValueError(f"A pasta {pasta_escolhida} deve ter pelo menos {self.n_objetos} imagens")
 
         self.all_images = imagens  # keep all images for variety
 
@@ -138,7 +141,7 @@ class FOACGame:
     def resetar_jogo(self):
         # --- pick objects for this round ---
         random.shuffle(self.all_images)
-        objs = self.all_images[:7]
+        objs = self.all_images[:self.n_objetos]
         blur_radius = 4      # default blur
         dist_min = 150       # default spacing
 
@@ -166,8 +169,7 @@ class FOACGame:
         self.opcoes = []
         for i, path in enumerate(objs):
             _, _, depth = self.posicoes[i]
-            max_blur = 12
-            extra_blur = int(depth * max_blur)
+            extra_blur = int(depth * self.max_blur)
             img_blur = self.carregar_img(path, (120, 120), extra_blur)
             img_nitida = self.carregar_img(path, (120, 120), 0)
             self.opcoes.append({
@@ -314,11 +316,9 @@ class FOACGame:
         current_time = time.time() 
         self.tela.blit(self.fundo, (0, 0))
 
-        #inicio_captura = time.time() / 1000
-
         # pega posição do cursor ou gaze
-        mx, my, blink = self.get_cursor()
-        gaze_valido = (mx is not None and my is not None)
+        self.inicio_captura = time.time()
+        mx, my, blink, self.gaze_valido = self.get_cursor()
 
         # --- draw all options ---
         for i, opc in enumerate(self.opcoes):
@@ -403,15 +403,16 @@ class FOACGame:
         for anim in completed:
             self.animacoes.remove(anim)
 
-        # --- 3️⃣ REGISTRO DE MÉTRICAS TÉCNICAS ---
-        fim_frame = time.time()
-        self.metricas.registrar_gaze(gaze_valido, current_time, fim_frame)
-        self.metricas.registrar_fps(self.clock.get_fps())
-
         # --- check completion ---
         if len(self.coletados) >= self.objetivo:
             self.acertos += 1
             pygame.time.delay(800)
+            # fecha fixações ainda abertas antes de calcular os totais
+            for i, inicio in enumerate(self.gaze_start_times):
+                if inicio is not None:
+                    self.fixacoes[i].append((inicio, current_time))
+                    self.duracao_total_fixacao[i] += current_time - inicio
+                    self.gaze_start_times[i] = None
             total_time = (self.tempo_fim or time.time()) - self.tempo_inicio
             first_fixation = min([t for t in self.tempo_primeira_fixacao.values() if t is not None], default=0)
             total_fixation_time = sum(self.duracao_total_fixacao.values())
@@ -438,7 +439,7 @@ class FOACGame:
                 "total_brinquedos": self.objetivo
             }
 
-            self.metricas.salvar_csv(dados_jogo,"metricas_FOAC.csv")
+            self.metricas.salvar_csv(dados_jogo,"data/metricas/metricas_FOAC.csv")
 
             #self.resetar_jogo()
             return result
@@ -493,9 +494,11 @@ class FOACGame:
 
         self.logo_change_time = time.time() 
     def get_cursor(self):
+        gaze_valido = True
         if self.gaze:
             mx, my, blink = self.gaze.get_gaze_blink()
             if mx is None or my is None or mx <= 0 or my <= 0:
+                gaze_valido = False  # cursor vai para o centro, mas conta como perda de rastreio
                 mx, my = self.largura // 2, self.altura // 2
                 blink = False
             else:
@@ -534,7 +537,7 @@ class FOACGame:
         if closest_target:
             mx, my = self.snap_to_target(mx, my, closest_target[0], closest_target[1])
 
-        return mx, my, blink
+        return mx, my, blink, gaze_valido
 
 
     def snap_to_target(self, mx, my, target_x, target_y):
@@ -577,16 +580,11 @@ class FOACGame:
                 return result  # end screen returned a signal
 
             rodando = self.processar_eventos()
-            # --- MÉTRICAS TÉCNICAS ---
-            inicio_captura = time.time()
-            fps_atual = self.clock.get_fps()
-
-            # Simulate gaze capture timing if you don’t have it embedded yet
-            fim_frame = time.time()
-
-            # gaze_valido = self.gaze is not None and self.gaze.get_gaze_blink()[0] is not None
-            # self.metricas.registrar_gaze(gaze_valido, inicio_captura, fim_frame)
-            # self.metricas.registrar_fps(fps_atual)
 
             pygame.display.flip()
+
+            # --- MÉTRICAS TÉCNICAS (latência: leitura do gaze até a tela atualizada) ---
+            self.metricas.registrar_gaze(self.gaze_valido, self.inicio_captura, time.time())
+            self.metricas.registrar_fps(self.clock.get_fps())
+
             self.clock.tick(60)
