@@ -1,8 +1,9 @@
 import pygame
 import sys
+from focobot import ui
 
 # ------------------------
-# BUTTON CLASSES
+# BUTTON CLASS (botões com imagem do menu)
 # ------------------------
 class Button:
     def __init__(self, text, rect, callback, image_path=None, hover_image_path=None, font=None, show_text=True):
@@ -12,33 +13,23 @@ class Button:
         self.font = font or pygame.font.SysFont("Segoe UI", 36)
         self.show_text = show_text
 
+        # imagens escaladas uma vez para a largura do botão
         if image_path:
-            self.image = pygame.image.load(image_path).convert_alpha()
-            self.image = self.scale_keep_aspect(self.image, rect[2])
+            self.image = ui.load_scaled(image_path, rect[2])
             self.rect.size = self.image.get_size()
         else:
             self.image = None
+        self.hover_image = ui.load_scaled(hover_image_path, rect[2]) if hover_image_path else self.image
 
-        if hover_image_path:
-            self.hover_image = pygame.image.load(hover_image_path).convert_alpha()
-            self.hover_image = self.scale_keep_aspect(self.hover_image, rect[2])
-        else:
-            self.hover_image = self.image
-
-    def scale_keep_aspect(self, image, target_width):
-        w, h = image.get_size()
-        aspect = h / w
-        new_height = int(target_width * aspect)
-        return pygame.transform.smoothscale(image, (target_width, new_height))
+    def is_hover(self):
+        return self.rect.collidepoint(pygame.mouse.get_pos())
 
     def draw(self, surface):
-        mouse_pos = pygame.mouse.get_pos()
-        is_hover = self.rect.collidepoint(mouse_pos)
+        is_hover = self.is_hover()
         img_to_draw = self.hover_image if is_hover else self.image
 
         if img_to_draw:
-            img_scaled = pygame.transform.smoothscale(img_to_draw, (self.rect.width, self.rect.height))
-            surface.blit(img_scaled, self.rect.topleft)
+            surface.blit(img_to_draw, self.rect.topleft)
         else:
             color = (80, 120, 255) if not is_hover else (120, 160, 255)
             pygame.draw.rect(surface, color, self.rect, border_radius=8)
@@ -52,24 +43,6 @@ class Button:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.rect.collidepoint(event.pos):
                 self.callback()
-
-
-class ValueButton:
-    def __init__(self, x, y, width, height, callback, text):
-        self.rect = pygame.Rect(x, y, width, height)
-        self.callback = callback
-        self.text = text
-        self.font = pygame.font.SysFont("Segoe UI", 30)
-
-    def draw(self, surface):
-        pygame.draw.rect(surface, (60, 60, 200), self.rect, border_radius=6)
-        txt = self.font.render(self.text, True, (255, 255, 255))
-        txt_rect = txt.get_rect(center=self.rect.center)
-        surface.blit(txt, txt_rect)
-
-    def check_click(self, pos):
-        if self.rect.collidepoint(pos):
-            self.callback()
 
 
 # ------------------------
@@ -102,6 +75,58 @@ class GameConfig:
 # ------------------------
 # SETTINGS SCREEN
 # ------------------------
+# Mesma ordem dos botões do menu. "disabled" = opção que o jogo ainda não usa.
+SECTIONS = [
+    {
+        "name": "Resgate Espacial",
+        "logo": "Assets/MainMenu/Logo/logo_sese.png",
+        "color": (171, 120, 255),
+        "options": [
+            {"label": "Raio de Encaixe", "attr": "sese_snap_radius", "values": [50, 80, 110, 120, 140, 170, 200, 230, 260, 300], "unit": "px"},
+            {"label": "Asteroides", "attr": "sese_asteroid_count", "values": [3, 5, 7]},
+            {"label": "Velocidade do Foguete", "attr": "sese_speed", "values": [1, 2, 3, 4]},
+            {"label": "Tempo de Olhar", "attr": "sese_required_look_time", "values": [0.2, 0.3, 0.5, 0.8, 1.0, 1.2], "unit": "s"},
+            {"label": "Tamanho do Objeto", "attr": "sese_object_radius", "values": [20, 30, 40, 50, 60], "unit": "px", "disabled": True},
+        ],
+    },
+    {
+        "name": "Aventura Aquática",
+        "logo": "Assets/MainMenu/Logo/logo_suse.png",
+        "color": (72, 199, 242),
+        "options": [
+            {"label": "Quantidade de Alimentos", "attr": "suse_num_foods", "values": [3, 5, 7, 10]},
+            {"label": "Velocidade do Peixe", "attr": "suse_fish_speed", "values": [1, 2, 3, 10]},
+            {"label": "Margem de Colisão", "attr": "suse_hit_radius", "values": [30, 40, 50, 60, 70], "unit": "px"},
+            {"label": "Espaçamento dos Alimentos", "attr": "suse_food_spacing", "values": [100, 120, 150, 180, 200], "unit": "px"},
+            {"label": "Tamanho dos Alimentos", "attr": "suse_object_size", "values": [20, 30, 40, 50, 60], "unit": "px"},
+        ],
+    },
+    {
+        "name": "Missão dos Brinquedos",
+        "logo": "Assets/MainMenu/Logo/logo_foac.png",
+        "color": (255, 159, 67),
+        "options": [
+            {"label": "Raio de Encaixe", "attr": "foac_snap_radius", "values": [50, 80, 110, 140, 170, 200, 230, 260, 300], "unit": "px"},
+            {"label": "Objetivos", "attr": "foac_objetivos", "values": [1, 2, 3, 4, 5]},
+            {"label": "Tempo de Fixação", "attr": "foac_fixation_time", "values": [0.3, 0.6, 0.9, 1.2, 1.5], "unit": "s", "disabled": True},
+            {"label": "Desfoque Máximo", "attr": "foac_max_blur", "values": list(range(0, 16))},
+            {"label": "Quantidade de Objetos", "attr": "foac_object_count", "values": [4, 5, 6, 7]},
+        ],
+    },
+]
+
+CARD_BG = (22, 18, 48, 205)
+TRACK = (255, 255, 255, 45)
+DOT = (255, 255, 255, 120)
+DISABLED = (70, 66, 96)
+TEXT_DIM = (150, 146, 175)
+
+
+def format_value(value, unit=None):
+    txt = f"{value:g}".replace(".", ",")  # 0.2 -> "0,2"
+    return f"{txt} {unit}" if unit else txt
+
+
 class SettingsScreen:
     def __init__(self, tela, largura, altura, clock, config, bg_path="Assets/MainMenu/Background/bg_settings.png"):
         self.tela = tela
@@ -109,145 +134,218 @@ class SettingsScreen:
         self.altura = altura
         self.clock = clock
         self.config = config
-        self.font = pygame.font.SysFont("Segoe UI", 30)
-        self.title_font = pygame.font.SysFont("Segoe UI Semibold", 60)
-        self.section_font = pygame.font.SysFont("Segoe UI Semibold", 36)
-        self.buttons = []
         self.running = True
+        self.s = s = min(largura / 1920, altura / 1080)  # escala da interface
 
-        # Load and scale background
-        bg_image = pygame.image.load(bg_path).convert()
-        img_w, img_h = bg_image.get_size()
-        scale_factor = max(largura / img_w, altura / img_h)
-        self.bg_image_scaled = pygame.transform.smoothscale(bg_image, (int(img_w * scale_factor), int(img_h * scale_factor)))
-        self.bg_rect = self.bg_image_scaled.get_rect(center=(largura // 2, altura // 2))
+        self.label_font = ui.font(26 * s)
+        self.value_font = ui.font(28 * s)
+        self.tag_font = ui.font(18 * s)
+        self.button_font = ui.font(30 * s)
 
-        # Settings grouped by game — tudo em botões, valores discretos:
-        self.columns = {
-            "Missão dos Brinquedos": [
-                {"label": "Raio de Encaixe", "attr": "foac_snap_radius", "values": [50, 80, 110, 140, 170, 200, 230, 260, 300], "type": "buttons"},
-                {"label": "Objetivos", "attr": "foac_objetivos", "values": [1, 2, 3, 4, 5], "type": "buttons"},
-                {"label": "Tempo de Fixação (s)", "attr": "foac_fixation_time", "values": [0.3, 0.6, 0.9, 1.2, 1.5], "type": "buttons"},
-                {"label": "Desfoque Máximo", "attr": "foac_max_blur", "values": list(range(0, 16)), "type": "buttons"},
-                {"label": "Quantidade de Objetos", "attr": "foac_object_count", "values": [4, 5, 6, 7], "type": "buttons"}
-            ],
+        self.rows = []  # uma entrada por opção, com a geometria dos controles
+        self.static = self._build_static(bg_path)
 
-            "Resgate Espacial": [
-                {"label": "Raio de Encaixe", "attr": "sese_snap_radius", "values": [50, 80, 110, 120, 140, 170, 200, 230, 260, 300], "type": "buttons"},
-                {"label": "Asteroides", "attr": "sese_asteroid_count", "values": [3, 5, 7], "type": "buttons"},
-                {"label": "Velocidade do Foguete", "attr": "sese_speed", "values": [1, 2, 3, 4], "type": "buttons"},
-                {"label": "Tempo de Olhar (s)", "attr": "sese_required_look_time", "values": [0.2, 0.3, 0.5, 0.8, 1.0, 1.2], "type": "buttons"},
-                {"label": "Tamanho do Objeto", "attr": "sese_object_radius", "values": [20, 30, 40, 50, 60], "type": "buttons"}
-            ],
+        # --- Rodapé ---
+        btn_h = int(64 * s)
+        reset_w, back_w, gap = int(300 * s), int(220 * s), int(24 * s)
+        x = (largura - reset_w - gap - back_w) // 2
+        y = int(965 * s) - btn_h // 2
+        self.reset_btn = ui.PillButton("Restaurar padrões", (x, y, reset_w, btn_h), self.reset_defaults,
+                                       self.button_font, filled=False)
+        self.back_btn = ui.PillButton("Voltar", (x + reset_w + gap, y, back_w, btn_h), self.back, self.button_font)
 
-            "Aventura Aquática": [
-                {"label": "Quantidade de Alimentos", "attr": "suse_num_foods", "values": [3, 5, 7, 10], "type": "buttons"},
-                {"label": "Velocidade do Peixe", "attr": "suse_fish_speed", "values": [1, 2, 3, 10], "type": "buttons"},
-                {"label": "Raio de Colisão", "attr": "suse_hit_radius", "values": [30, 40, 50, 60, 70], "type": "buttons"},
-                {"label": "Espaçamento dos Alimentos", "attr": "suse_food_spacing", "values": [100, 120, 150, 180, 200], "type": "buttons"},
-                {"label": "Tamanho dos Objetos", "attr": "suse_object_size", "values": [20, 30, 40, 50, 60], "type": "buttons"}
-            ]
-        }
+    # -------------------- layout estático (desenhado uma vez) --------------------
+    def _build_static(self, bg_path):
+        s = self.s
+        static = pygame.Surface((self.largura, self.altura)).convert()
+        bg, bg_rect = ui.load_cover(bg_path, self.largura, self.altura)
+        static.blit(bg, bg_rect)
+        ui.draw_round_rect(static, static.get_rect(), (0, 0, 0, 60), 0)
 
-        self._create_ui()
+        title = ui.render_outlined(ui.font(84 * s), "Configurações", outline=max(2, int(4 * s)))
+        static.blit(title, title.get_rect(center=(self.largura // 2, int(95 * s))))
+        subtitle = ui.font(28 * s).render("Ajuste cada minigame antes de começar", True, (235, 230, 255))
+        static.blit(subtitle, subtitle.get_rect(center=(self.largura // 2, int(165 * s))))
 
-    def draw_panel(self, x, y, width, height, alpha=160):
-        """Desenha painel escuro translúcido para contraste"""
-        panel = pygame.Surface((width, height), pygame.SRCALPHA)
-        panel.fill((0, 0, 0, alpha))
-        self.tela.blit(panel, (x, y))
+        pad, gap = 80 * s, 40 * s
+        card_w = (self.largura - 2 * pad - 2 * gap) / 3
+        top, header_h, row_h = 210 * s, 120 * s, 106 * s
+        card_h = header_h + 20 * s + row_h * 5 + 10 * s
+        inner = 28 * s
+        name_font = ui.font(34 * s)
 
-    def _create_ui(self):
-        start_y = 120
-        screen_padding = 80
-        num_cols = len(self.columns)
-        col_width = (self.largura - 2 * screen_padding) / num_cols
+        for i, section in enumerate(SECTIONS):
+            color = section["color"]
+            card = pygame.Rect(int(pad + i * (card_w + gap)), int(top), int(card_w), int(card_h))
+            radius = int(28 * s)
 
+            ui.draw_round_rect(static, card.move(0, int(6 * s)), (0, 0, 0, 90), radius)  # sombra
+            ui.draw_round_rect(static, card, CARD_BG, radius)
+            header = pygame.Surface((card.width, int(header_h)), pygame.SRCALPHA)
+            pygame.draw.rect(header, (*color, 45), header.get_rect(),
+                             border_top_left_radius=radius, border_top_right_radius=radius)
+            static.blit(header, card.topleft)
+            ui.draw_round_rect(static, card, (*color, 170), radius, width=max(1, int(2 * s)))
+
+            icon_size = int(112 * s)  # as imagens dos logos têm bastante margem transparente
+            icon = pygame.transform.smoothscale(pygame.image.load(section["logo"]).convert_alpha(), (icon_size, icon_size))
+            icon_y = card.y + (int(header_h) - icon_size) // 2
+            static.blit(icon, (card.x + int(inner * 0.3), icon_y))
+            name = name_font.render(section["name"], True, color)
+            static.blit(name, name.get_rect(midleft=(card.x + int(inner * 0.3) + icon_size,
+                                                     card.y + int(header_h) // 2)))
+
+            y = card.y + header_h + 20 * s
+            for opt in section["options"]:
+                label_color = TEXT_DIM if opt.get("disabled") else ui.BRANCO
+                label = self.label_font.render(opt["label"], True, label_color)
+                static.blit(label, label.get_rect(midleft=(card.x + inner, y + 18 * s)))
+
+                ctrl_y = y + 64 * s
+                btn_r = 22 * s
+                minus_c = (card.x + inner + btn_r, ctrl_y)
+                plus_c = (card.right - inner - btn_r, ctrl_y)
+                track_x0 = minus_c[0] + btn_r + 22 * s
+                track_x1 = plus_c[0] - btn_r - 22 * s
+                n = len(opt["values"])
+                dots = [track_x0 + (track_x1 - track_x0) * k / (n - 1) for k in range(n)]
+                self.rows.append({
+                    "opt": opt, "color": color, "value_right": (card.right - inner, y + 18 * s),
+                    "minus": minus_c, "plus": plus_c, "btn_r": btn_r, "dots": dots, "ctrl_y": ctrl_y,
+                    "area": pygame.Rect(card.x, int(y), card.width, int(row_h)),
+                })
+                y += row_h
+        return static
+
+    # -------------------- lógica dos valores --------------------
+    def _index(self, opt):
+        current = getattr(self.config, opt["attr"])
+        return min(range(len(opt["values"])), key=lambda k: abs(opt["values"][k] - current))
+
+    def step(self, opt, direction):
         # o valor atual pode não estar na lista (ex.: padrão 0.8 com opções 0.6/0.9),
         # então busca o próximo valor menor/maior em vez de usar values.index()
-        def make_dec(attr, values):
-            def dec():
-                current = getattr(self.config, attr)
-                menores = [v for v in values if v < current]
-                if menores:
-                    setattr(self.config, attr, menores[-1])
-            return dec
+        current = getattr(self.config, opt["attr"])
+        if direction > 0:
+            candidates = [v for v in opt["values"] if v > current][:1]
+        else:
+            candidates = [v for v in opt["values"] if v < current][-1:]
+        if candidates:
+            setattr(self.config, opt["attr"], candidates[0])
 
-        def make_inc(attr, values):
-            def inc():
-                current = getattr(self.config, attr)
-                maiores = [v for v in values if v > current]
-                if maiores:
-                    setattr(self.config, attr, maiores[0])
-            return inc
+    def reset_defaults(self):
+        self.config.__dict__.update(GameConfig().__dict__)
 
-        self.buttons.clear()
+    def back(self):
+        self.running = False
 
-        for col_idx, (game_name, options) in enumerate(self.columns.items()):
-            x_start = screen_padding + col_width * col_idx
-            # Coloque os botões com margem maior para garantir que não ultrapassem
-            controls_x = x_start + col_width - 140  # mais à esquerda que antes
-            y = start_y + 80
+    # -------------------- hit testing --------------------
+    def _hit(self, pos):
+        """Retorna (row, alvo) sob o mouse: alvo é 'minus', 'plus' ou o índice de um ponto."""
+        for row in self.rows:
+            if row["opt"].get("disabled") or not row["area"].collidepoint(pos):
+                continue
+            for key in ("minus", "plus"):
+                cx, cy = row[key]
+                if (pos[0] - cx) ** 2 + (pos[1] - cy) ** 2 <= (row["btn_r"] + 4 * self.s) ** 2:
+                    return row, key
+            if abs(pos[1] - row["ctrl_y"]) <= 20 * self.s:
+                for k, dx in enumerate(row["dots"]):
+                    if abs(pos[0] - dx) <= 14 * self.s:
+                        return row, k
+            return row, None
+        return None, None
 
-            for opt in options:
-                opt["y"] = y
-                dec_btn = ValueButton(int(controls_x), int(y - 15), 35, 35, make_dec(opt["attr"], opt["values"]), "-")
-                inc_btn = ValueButton(int(controls_x + 40), int(y - 15), 35, 35, make_inc(opt["attr"], opt["values"]), "+")
-                self.buttons.extend([dec_btn, inc_btn])
-                opt["dec_btn"], opt["inc_btn"] = dec_btn, inc_btn
-                y += 70
+    # -------------------- desenho --------------------
+    def _draw_step_button(self, center, radius, symbol, color, enabled, hover):
+        s = self.s
+        fill = (ui.mix(color, ui.BRANCO, 0.25) if hover else color) if enabled else DISABLED
+        ui.draw_circle(self.tela, center, radius, fill)
+        cx, cy = int(center[0]), int(center[1])
+        half, thick = int(radius * 0.45), max(2, int(4 * s))
+        sym_color = ui.BRANCO if enabled else TEXT_DIM
+        pygame.draw.line(self.tela, sym_color, (cx - half, cy), (cx + half, cy), thick)
+        if symbol == "+":
+            pygame.draw.line(self.tela, sym_color, (cx, cy - half), (cx, cy + half), thick)
 
-        def back_to_menu():
-            self.running = False
+    def _draw_row(self, row, hover_target):
+        s, opt, color = self.s, row["opt"], row["color"]
+        disabled = opt.get("disabled", False)
+        values = opt["values"]
+        current = getattr(self.config, opt["attr"])
+        idx = self._index(opt)
 
-        back_btn = Button("Voltar", (self.largura - 160, self.altura - 80, 140, 50), back_to_menu, font=self.font)
-        self.buttons.append(back_btn)
+        # valor (ou etiqueta "em breve")
+        if disabled:
+            tag = self.tag_font.render("em breve", True, TEXT_DIM)
+            tag_rect = tag.get_rect().inflate(int(20 * s), int(8 * s))
+            tag_rect.midright = row["value_right"]
+            ui.draw_round_rect(self.tela, tag_rect, (255, 255, 255, 25), tag_rect.height // 2)
+            self.tela.blit(tag, tag.get_rect(center=tag_rect.center))
+        else:
+            val = self.value_font.render(format_value(current, opt.get("unit")), True, color)
+            self.tela.blit(val, val.get_rect(midright=row["value_right"]))
+
+        # trilha com um ponto por valor possível
+        dots, ty = row["dots"], row["ctrl_y"]
+        track = pygame.Rect(int(dots[0]), int(ty - 3 * s), int(dots[-1] - dots[0]), max(2, int(6 * s)))
+        ui.draw_round_rect(self.tela, track, TRACK, track.height // 2)
+        if not disabled and idx > 0:
+            filled = pygame.Rect(track.x, track.y, int(dots[idx] - dots[0]), track.height)
+            ui.draw_round_rect(self.tela, filled, (*color, 230), track.height // 2)
+        for k, dx in enumerate(dots):
+            if disabled:
+                ui.draw_circle(self.tela, (dx, ty), 5 * s, (255, 255, 255, 40))
+            elif k == idx:
+                ui.draw_circle(self.tela, (dx, ty), 13 * s, ui.BRANCO)
+                ui.draw_circle(self.tela, (dx, ty), 9 * s, color)
+            else:
+                r = (8 if hover_target == k else 6) * s
+                ui.draw_circle(self.tela, (dx, ty), r, color if k < idx else DOT)
+
+        # botões - / +
+        can_dec = not disabled and any(v < current for v in values)
+        can_inc = not disabled and any(v > current for v in values)
+        self._draw_step_button(row["minus"], row["btn_r"], "-", color, can_dec, hover_target == "minus")
+        self._draw_step_button(row["plus"], row["btn_r"], "+", color, can_inc, hover_target == "plus")
 
     def draw(self):
-        self.tela.blit(self.bg_image_scaled, self.bg_rect)
-
-        # Título
-        title_surf = self.title_font.render("Configurações", True, (255, 255, 255))
-        title_rect = title_surf.get_rect(center=(self.largura // 2, 60))
-        self.tela.blit(title_surf, title_rect)
-
-        screen_padding = 80
-        num_cols = len(self.columns)
-        col_width = (self.largura - 2 * screen_padding) / num_cols
-        panel_height = self.altura - 200
-
-        for col_idx, (game_name, options) in enumerate(self.columns.items()):
-            x_start = screen_padding + col_width * col_idx
-            self.draw_panel(x_start - 20, 100, col_width - 40, panel_height)
-
-            section_surf = self.section_font.render(game_name, True, (255, 255, 180))
-            self.tela.blit(section_surf, (x_start + 30, 110))
-
-            for opt in options:
-                value = getattr(self.config, opt["attr"])
-                label_surf = self.font.render(f"{opt['label']}: {value}", True, (255, 255, 255))
-                self.tela.blit(label_surf, (x_start + 30, opt["y"]))
-
-        for btn in self.buttons:
-            btn.draw(self.tela)
-
+        self.tela.blit(self.static, (0, 0))
+        hover_row, hover_target = self._hit(pygame.mouse.get_pos())
+        for row in self.rows:
+            self._draw_row(row, hover_target if row is hover_row else None)
+        self.reset_btn.draw(self.tela)
+        self.back_btn.draw(self.tela)
+        ui.set_hand_cursor(hover_target is not None or self.reset_btn.is_hover() or self.back_btn.is_hover())
         pygame.display.flip()
+
+    # -------------------- loop --------------------
+    def handle_event(self, event):
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+        elif event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_RETURN):
+            self.back()
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            row, target = self._hit(event.pos)
+            if target == "minus":
+                self.step(row["opt"], -1)
+            elif target == "plus":
+                self.step(row["opt"], +1)
+            elif isinstance(target, int):
+                setattr(self.config, row["opt"]["attr"], row["opt"]["values"][target])
+            self.reset_btn.check_click(event)
+            self.back_btn.check_click(event)
+        elif event.type == pygame.MOUSEWHEEL:
+            row, _ = self._hit(pygame.mouse.get_pos())
+            if row and event.y:
+                self.step(row["opt"], event.y)
 
     def run(self):
         self.running = True
         while self.running:
             self.draw()
             for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-                elif event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
-                    self.running = False
-                elif event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
-                    if event.type == pygame.MOUSEBUTTONDOWN:
-                        for btn in self.buttons:
-                            if isinstance(btn, ValueButton):
-                                btn.check_click(event.pos)
-                            else:
-                                btn.check_click(event)
+                self.handle_event(event)
             self.clock.tick(30)
+        ui.set_hand_cursor(False)
